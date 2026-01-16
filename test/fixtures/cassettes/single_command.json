@@ -1,0 +1,15 @@
+{
+  "commands": [
+    {
+      "args": [
+        "first"
+      ],
+      "command": "echo",
+      "exit_code": 0,
+      "opts": {},
+      "output": "first\n",
+      "recorded_at": "2026-01-16T03:44:40.246863Z"
+    }
+  ],
+  "ports": []
+}
