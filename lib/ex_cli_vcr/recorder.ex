@@ -77,11 +77,17 @@ defmodule ExCliVcr.Recorder do
       active: true
     }
 
+    # Install the mock for System.cmd
+    install_mock()
+
     {:reply, :ok, state}
   end
 
   @impl true
   def handle_call(:stop, _from, state) do
+    # Uninstall the mock
+    uninstall_mock()
+
     if state.active and length(state.new_recordings) > 0 do
       all_recordings = state.recordings ++ Enum.reverse(state.new_recordings)
       Cassette.save(state.cassette_path, all_recordings)
@@ -190,6 +196,39 @@ defmodule ExCliVcr.Recorder do
       opts
       |> Keyword.take([:cd, :env, :arg0, :stderr_to_stdout, :into, :parallelism])
 
-    :erlang.apply(System, :cmd, [command, args, valid_opts])
+    # Call the original System.cmd implementation directly via :meck_code_gen.get_orig_mod/1
+    # or use the underlying implementation
+    orig_mod = :meck_util.original_name(System)
+    apply(orig_mod, :cmd, [command, args, valid_opts])
+  end
+
+  defp install_mock do
+    # Unload any existing mock first
+    uninstall_mock()
+
+    # Create a mock for System module, keeping original functions
+    # :unstick is needed for OTP modules, :passthrough keeps non-mocked functions working
+    :meck.new(System, [:passthrough, :unstick])
+
+    # Mock cmd/3 to go through our recorder
+    :meck.expect(System, :cmd, fn command, args, opts ->
+      ExCliVcr.cmd(command, args, opts)
+    end)
+
+    # Mock cmd/2 (no opts) to go through our recorder
+    :meck.expect(System, :cmd, fn command, args ->
+      ExCliVcr.cmd(command, args, [])
+    end)
+
+    :ok
+  end
+
+  defp uninstall_mock do
+    :meck.unload(System)
+    :ok
+  rescue
+    _ -> :ok
+  catch
+    _, _ -> :ok
   end
 end

@@ -20,14 +20,14 @@ end
 
 ```elixir
 defmodule MyTest do
-  use ExUnit.Case
+  use ExUnit.Case, async: false
   use ExCliVcr
 
   test "runs a command" do
     use_cmd_cassette "my_command" do
       # First run: executes the real command and records the output
       # Subsequent runs: replays the recorded output
-      {output, exit_code} = ExCliVcr.cmd("echo", ["hello"])
+      {output, exit_code} = System.cmd("echo", ["hello"])
       assert output == "hello\n"
       assert exit_code == 0
     end
@@ -35,15 +35,17 @@ defmodule MyTest do
 end
 ```
 
+**Note:** Tests using ExCliVcr should use `async: false` since the library mocks global state.
+
 ## Usage
 
 ### Basic Recording and Playback
 
-Use `ExCliVcr.cmd/3` instead of `System.cmd/3` within a `use_cmd_cassette` block:
+Just use `System.cmd/3` as normal within a `use_cmd_cassette` block - ExCliVcr automatically intercepts the calls:
 
 ```elixir
 use_cmd_cassette "list_files" do
-  {output, 0} = ExCliVcr.cmd("ls", ["-la"])
+  {output, 0} = System.cmd("ls", ["-la"])
   # Process output...
 end
 ```
@@ -57,22 +59,22 @@ Control how cassettes are recorded with the `:record` option:
 ```elixir
 # :once (default) - Record if cassette doesn't exist, replay if it does
 use_cmd_cassette "my_test" do
-  ExCliVcr.cmd("echo", ["test"])
+  System.cmd("echo", ["test"])
 end
 
 # :new - Always record, overwriting existing cassettes
 use_cmd_cassette "my_test", record: :new do
-  ExCliVcr.cmd("echo", ["test"])
+  System.cmd("echo", ["test"])
 end
 
 # :none - Never record, only replay (raises if cassette missing)
 use_cmd_cassette "my_test", record: :none do
-  ExCliVcr.cmd("echo", ["test"])
+  System.cmd("echo", ["test"])
 end
 
 # :all - Record all calls even if cassette exists (appends)
 use_cmd_cassette "my_test", record: :all do
-  ExCliVcr.cmd("echo", ["test"])
+  System.cmd("echo", ["test"])
 end
 ```
 
@@ -83,13 +85,13 @@ ExCliVcr supports the same options as `System.cmd/3`:
 ```elixir
 use_cmd_cassette "with_options" do
   # Change working directory
-  ExCliVcr.cmd("pwd", [], cd: "/tmp")
+  System.cmd("pwd", [], cd: "/tmp")
 
   # Set environment variables
-  ExCliVcr.cmd("sh", ["-c", "echo $MY_VAR"], env: [{"MY_VAR", "value"}])
+  System.cmd("sh", ["-c", "echo $MY_VAR"], env: [{"MY_VAR", "value"}])
 
   # Redirect stderr to stdout
-  ExCliVcr.cmd("ls", ["nonexistent"], stderr_to_stdout: true)
+  System.cmd("ls", ["nonexistent"], stderr_to_stdout: true)
 end
 ```
 
@@ -100,46 +102,13 @@ By default, cassettes match on command and arguments. Customize this with `:matc
 ```elixir
 # Match only on command (ignore arguments)
 use_cmd_cassette "my_test", match_requests_on: [:command] do
-  ExCliVcr.cmd("date", [])
+  System.cmd("date", [])
 end
 
 # Match on command, args, and working directory
 use_cmd_cassette "my_test", match_requests_on: [:command, :args, :cd] do
-  ExCliVcr.cmd("pwd", [], cd: "/tmp")
+  System.cmd("pwd", [], cd: "/tmp")
 end
-```
-
-### Using with Existing Code
-
-If you have existing code that calls `System.cmd`, you can make it testable by using dependency injection:
-
-```elixir
-defmodule MyModule do
-  def run_command(cmd_fn \\ &System.cmd/3) do
-    cmd_fn.("echo", ["hello"], [])
-  end
-end
-
-# In your test:
-use_cmd_cassette "my_test" do
-  MyModule.run_command(&ExCliVcr.cmd/3)
-end
-```
-
-Or use module configuration:
-
-```elixir
-# lib/my_module.ex
-defmodule MyModule do
-  @cmd_module Application.compile_env(:my_app, :cmd_module, System)
-
-  def run_command do
-    @cmd_module.cmd("echo", ["hello"], [])
-  end
-end
-
-# config/test.exs
-config :my_app, :cmd_module, ExCliVcr
 ```
 
 ## Configuration

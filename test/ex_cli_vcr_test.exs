@@ -1,5 +1,6 @@
 defmodule ExCliVcrTest do
-  use ExUnit.Case
+  # async: false required because ExCliVcr mocks global System.cmd
+  use ExUnit.Case, async: false
   use ExCliVcr
 
   @cassette_dir "test/fixtures/cassettes"
@@ -14,7 +15,7 @@ defmodule ExCliVcrTest do
   describe "use_cmd_cassette/2" do
     test "records a new command execution" do
       use_cmd_cassette "echo_test" do
-        {output, exit_code} = ExCliVcr.cmd("echo", ["hello"])
+        {output, exit_code} = System.cmd("echo", ["hello"])
         assert output == "hello\n"
         assert exit_code == 0
       end
@@ -35,7 +36,7 @@ defmodule ExCliVcrTest do
     test "replays a recorded command" do
       # First, record the command
       use_cmd_cassette "replay_test" do
-        {output, exit_code} = ExCliVcr.cmd("echo", ["first run"])
+        {output, exit_code} = System.cmd("echo", ["first run"])
         assert output == "first run\n"
         assert exit_code == 0
       end
@@ -50,15 +51,15 @@ defmodule ExCliVcrTest do
 
       # Now replay - should get the modified output
       use_cmd_cassette "replay_test" do
-        {output, _exit_code} = ExCliVcr.cmd("echo", ["first run"])
+        {output, _exit_code} = System.cmd("echo", ["first run"])
         assert output == "modified output\n"
       end
     end
 
     test "records multiple commands in a single cassette" do
       use_cmd_cassette "multiple_commands" do
-        {output1, _} = ExCliVcr.cmd("echo", ["one"])
-        {output2, _} = ExCliVcr.cmd("echo", ["two"])
+        {output1, _} = System.cmd("echo", ["one"])
+        {output2, _} = System.cmd("echo", ["two"])
 
         assert output1 == "one\n"
         assert output2 == "two\n"
@@ -76,12 +77,12 @@ defmodule ExCliVcrTest do
     test "record: :new always re-records" do
       # First recording
       use_cmd_cassette "force_record", record: :new do
-        ExCliVcr.cmd("echo", ["original"])
+        System.cmd("echo", ["original"])
       end
 
       # Second recording with :new should overwrite
       use_cmd_cassette "force_record", record: :new do
-        ExCliVcr.cmd("echo", ["updated"])
+        System.cmd("echo", ["updated"])
       end
 
       cassette_path = Path.join(@cassette_dir, "force_record.json")
@@ -94,15 +95,15 @@ defmodule ExCliVcrTest do
     test "record: :none raises when cassette is missing" do
       assert_raise ExCliVcr.CassetteNotFoundError, fn ->
         use_cmd_cassette "nonexistent", record: :none do
-          ExCliVcr.cmd("echo", ["test"])
+          System.cmd("echo", ["test"])
         end
       end
     end
   end
 
-  describe "cmd/3 outside cassette" do
-    test "passes through to System.cmd when not in cassette block" do
-      {output, exit_code} = ExCliVcr.cmd("echo", ["passthrough"])
+  describe "System.cmd outside cassette" do
+    test "passes through to real System.cmd when not in cassette block" do
+      {output, exit_code} = System.cmd("echo", ["passthrough"])
       assert output == "passthrough\n"
       assert exit_code == 0
     end
@@ -111,7 +112,7 @@ defmodule ExCliVcrTest do
   describe "command with options" do
     test "records commands with cd option" do
       use_cmd_cassette "with_cd" do
-        {output, 0} = ExCliVcr.cmd("pwd", [], cd: "/tmp")
+        {output, 0} = System.cmd("pwd", [], cd: "/tmp")
         # Output should contain /tmp or /private/tmp (macOS)
         assert String.contains?(output, "tmp")
       end
@@ -119,7 +120,7 @@ defmodule ExCliVcrTest do
 
     test "records commands with environment variables" do
       use_cmd_cassette "with_env" do
-        {output, 0} = ExCliVcr.cmd("sh", ["-c", "echo $MY_VAR"], env: [{"MY_VAR", "test_value"}])
+        {output, 0} = System.cmd("sh", ["-c", "echo $MY_VAR"], env: [{"MY_VAR", "test_value"}])
         assert String.trim(output) == "test_value"
       end
     end
@@ -128,7 +129,7 @@ defmodule ExCliVcrTest do
   describe "exit codes" do
     test "records non-zero exit codes" do
       use_cmd_cassette "exit_code" do
-        {_output, exit_code} = ExCliVcr.cmd("sh", ["-c", "exit 42"])
+        {_output, exit_code} = System.cmd("sh", ["-c", "exit 42"])
         assert exit_code == 42
       end
 
