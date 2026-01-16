@@ -1,0 +1,45 @@
+{
+  "commands": [],
+  "ports": [
+    {
+      "messages": [
+        {
+          "data": "one\n",
+          "direction": "in",
+          "type": "data"
+        },
+        {
+          "data": 0,
+          "direction": "in",
+          "type": "exit_status"
+        }
+      ],
+      "open_args": "{:spawn, \"echo one\"}",
+      "opts": [
+        "binary",
+        "exit_status"
+      ],
+      "recorded_at": "2026-01-16T03:22:37.594907Z"
+    },
+    {
+      "messages": [
+        {
+          "data": "two\n",
+          "direction": "in",
+          "type": "data"
+        },
+        {
+          "data": 0,
+          "direction": "in",
+          "type": "exit_status"
+        }
+      ],
+      "open_args": "{:spawn, \"echo two\"}",
+      "opts": [
+        "binary",
+        "exit_status"
+      ],
+      "recorded_at": "2026-01-16T03:22:37.595014Z"
+    }
+  ]
+}

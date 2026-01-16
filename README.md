@@ -1,6 +1,6 @@
 # ExCliVcr
 
-Record and replay `System.cmd` calls for testing, inspired by [ExVCR](https://github.com/parroty/exvcr).
+Record and replay `System.cmd` and `Port` calls for testing, inspired by [ExVCR](https://github.com/parroty/exvcr).
 
 ExCliVcr intercepts calls to command-line programs and either records their output to cassette files or replays previously recorded responses. This is useful for testing code that shells out to external commands without actually running those commands during tests.
 
@@ -111,6 +111,35 @@ use_cmd_cassette "my_test", match_requests_on: [:command, :args, :cd] do
 end
 ```
 
+### Port Recording
+
+ExCliVcr also supports recording and replaying Port operations. Unlike `System.cmd`, Port operations **require explicit wrapper functions** because `Port.open/2` compiles to a BIF that cannot be intercepted at runtime.
+
+```elixir
+use_cmd_cassette "port_test" do
+  # Use ExCliVcr.port_open instead of Port.open
+  port = ExCliVcr.port_open({:spawn, "cat"}, [:binary, :exit_status])
+
+  # Use ExCliVcr wrappers for port operations
+  ExCliVcr.port_command(port, "hello\n")
+
+  # Receive messages as normal - the port reference works the same
+  receive do
+    {^port, {:data, data}} ->
+      assert data == "hello\n"
+  end
+
+  ExCliVcr.port_close(port)
+end
+```
+
+The wrapper functions are:
+- `ExCliVcr.port_open/2` - Opens a port (records/replays)
+- `ExCliVcr.port_command/2` - Sends data to a port
+- `ExCliVcr.port_close/1` - Closes a port
+
+During recording, all messages sent to and received from the port are captured. During replay, the recorded messages are sent to your process on the same schedule.
+
 ## Configuration
 
 Configure ExCliVcr in your `config/test.exs`:
@@ -126,16 +155,29 @@ config :ex_cli_vcr,
 Cassettes are stored as JSON files with the following structure:
 
 ```json
-[
-  {
-    "command": "echo",
-    "args": ["hello"],
-    "opts": {},
-    "output": "hello\n",
-    "exit_code": 0,
-    "recorded_at": "2024-01-15T10:30:00Z"
-  }
-]
+{
+  "commands": [
+    {
+      "command": "echo",
+      "args": ["hello"],
+      "opts": {},
+      "output": "hello\n",
+      "exit_code": 0,
+      "recorded_at": "2024-01-15T10:30:00Z"
+    }
+  ],
+  "ports": [
+    {
+      "open_args": "{:spawn, \"cat\"}",
+      "opts": [":binary", ":exit_status"],
+      "messages": [
+        {"direction": "in", "type": "data", "data": "hello\n"},
+        {"direction": "in", "type": "exit_status", "data": 0}
+      ],
+      "recorded_at": "2024-01-15T10:30:00Z"
+    }
+  ]
+}
 ```
 
 ## License

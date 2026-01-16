@@ -2,7 +2,16 @@ defmodule ExCliVcr.Cassette do
   @moduledoc """
   Handles reading and writing cassette files.
 
-  Cassettes are JSON files that store recorded command executions.
+  Cassettes are JSON files that store recorded command and port executions.
+
+  ## Format
+
+  Cassettes use a structured format:
+
+      {
+        "commands": [...],
+        "ports": [...]
+      }
   """
 
   @doc """
@@ -16,17 +25,17 @@ defmodule ExCliVcr.Cassette do
   @doc """
   Load recordings from a cassette file.
 
-  Returns an empty list if the file doesn't exist.
+  Returns a map with :commands and :ports keys.
   """
   def load(path) do
     case File.read(path) do
       {:ok, content} ->
         content
         |> Jason.decode!()
-        |> Enum.map(&decode_recording/1)
+        |> decode_cassette()
 
       {:error, :enoent} ->
-        []
+        %{commands: [], ports: []}
 
       {:error, reason} ->
         raise "Failed to load cassette #{path}: #{inspect(reason)}"
@@ -42,14 +51,50 @@ defmodule ExCliVcr.Cassette do
 
     content =
       recordings
-      |> Enum.map(&encode_recording/1)
+      |> encode_cassette()
       |> Jason.encode!(pretty: true)
 
     File.write!(path, content)
   end
 
-  defp decode_recording(data) do
+  # Decode cassette - handle both new format and legacy format
+  defp decode_cassette(%{"commands" => commands, "ports" => ports}) do
     %{
+      commands: Enum.map(commands, &decode_command/1),
+      ports: Enum.map(ports, &decode_port/1)
+    }
+  end
+
+  # Legacy format - just a list of commands
+  defp decode_cassette(data) when is_list(data) do
+    %{
+      commands: Enum.map(data, &decode_command/1),
+      ports: []
+    }
+  end
+
+  defp decode_cassette(_), do: %{commands: [], ports: []}
+
+  defp encode_cassette(%{commands: commands, ports: ports}) do
+    %{
+      "commands" => Enum.map(commands, &encode_command/1),
+      "ports" => Enum.map(ports, &encode_port/1)
+    }
+  end
+
+  # Also handle legacy format for backwards compatibility
+  defp encode_cassette(recordings) when is_list(recordings) do
+    %{
+      "commands" => Enum.map(recordings, &encode_command/1),
+      "ports" => []
+    }
+  end
+
+  # Command encoding/decoding
+
+  defp decode_command(data) do
+    %{
+      type: :command,
       command: data["command"],
       args: data["args"],
       opts: decode_opts(data["opts"]),
@@ -59,7 +104,7 @@ defmodule ExCliVcr.Cassette do
     }
   end
 
-  defp encode_recording(recording) do
+  defp encode_command(recording) do
     %{
       "command" => recording.command,
       "args" => recording.args,
@@ -67,6 +112,43 @@ defmodule ExCliVcr.Cassette do
       "output" => recording.output,
       "exit_code" => recording.exit_code,
       "recorded_at" => recording.recorded_at || DateTime.utc_now() |> DateTime.to_iso8601()
+    }
+  end
+
+  # Port encoding/decoding
+
+  defp decode_port(data) do
+    %{
+      type: :port,
+      open_args: data["open_args"],
+      opts: data["opts"] || [],
+      messages: Enum.map(data["messages"] || [], &decode_port_message/1),
+      recorded_at: data["recorded_at"]
+    }
+  end
+
+  defp encode_port(recording) do
+    %{
+      "open_args" => recording.open_args,
+      "opts" => recording.opts,
+      "messages" => Enum.map(recording.messages, &encode_port_message/1),
+      "recorded_at" => recording.recorded_at || DateTime.utc_now() |> DateTime.to_iso8601()
+    }
+  end
+
+  defp decode_port_message(%{"direction" => dir, "type" => type} = msg) do
+    %{
+      direction: String.to_atom(dir),
+      type: String.to_atom(type),
+      data: msg["data"]
+    }
+  end
+
+  defp encode_port_message(msg) do
+    %{
+      "direction" => to_string(msg.direction),
+      "type" => to_string(msg.type),
+      "data" => msg.data
     }
   end
 

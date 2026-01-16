@@ -1,6 +1,6 @@
 defmodule ExCliVcr do
   @moduledoc """
-  Record and replay System.cmd calls for testing.
+  Record and replay System.cmd and Port calls for testing.
 
   ExCliVcr intercepts calls to `System.cmd/3` and either records them to a
   cassette file or replays previously recorded responses.
@@ -13,8 +13,29 @@ defmodule ExCliVcr do
 
       test "runs a command" do
         use_cmd_cassette "my_command" do
-          {output, 0} = ExCliVcr.cmd("echo", ["hello"])
+          # System.cmd is automatically mocked
+          {output, 0} = System.cmd("echo", ["hello"])
           assert output == "hello\\n"
+        end
+      end
+
+  ## Port Recording
+
+  For Port operations, you must use the ExCliVcr wrapper functions because
+  `Port.open/2` compiles to a BIF that cannot be mocked at runtime:
+
+      test "uses a port" do
+        use_cmd_cassette "my_port" do
+          # Must use ExCliVcr.port_open instead of Port.open
+          port = ExCliVcr.port_open({:spawn, "cat"}, [:binary, :exit_status])
+
+          # Use ExCliVcr wrappers for port operations
+          ExCliVcr.port_command(port, "hello\\n")
+          receive do
+            {^port, {:data, data}} -> assert data == "hello\\n"
+          end
+
+          ExCliVcr.port_close(port)
         end
       end
 
@@ -22,7 +43,7 @@ defmodule ExCliVcr do
 
   Configure ExCliVcr in your `config/test.exs`:
 
-      config :cli_vcr,
+      config :ex_cli_vcr,
         cassette_dir: "test/fixtures/cassettes",
         record_mode: :once
 
@@ -131,16 +152,76 @@ defmodule ExCliVcr do
   end
 
   @doc """
+  Open a port, recording or replaying as appropriate.
+
+  Use this instead of `Port.open/2` within a `use_cmd_cassette` block.
+  `Port.open/2` cannot be automatically mocked because it compiles to a BIF.
+
+  When called inside a `use_cmd_cassette` block, it will either:
+  - Record the port messages if no recording exists
+  - Replay previously recorded messages
+
+  When called outside a `use_cmd_cassette` block, it passes through to `Port.open/2`.
+
+  ## Examples
+
+      use_cmd_cassette "my_test" do
+        port = ExCliVcr.port_open({:spawn, "echo hello"}, [:binary, :exit_status])
+        receive do
+          {^port, {:data, data}} -> data
+        end
+      end
+  """
+  def port_open(open_args, opts) do
+    case GenServer.call(Recorder, {:port_open, open_args, opts}, :infinity) do
+      {:ok, port} -> port
+      {:error, error} -> raise error
+    end
+  end
+
+  @doc """
+  Send a command to a port.
+
+  Use this instead of Port.command/2 when working with recorded ports.
+  """
+  def port_command(port, data, _opts \\ []) do
+    if is_pid(port) do
+      # This is our proxy port
+      GenServer.call(Recorder, {:port_command, port, data}, :infinity)
+      true
+    else
+      # Real port, pass through
+      Port.command(port, data)
+    end
+  end
+
+  @doc """
+  Close a port.
+
+  Use this instead of Port.close/1 when working with recorded ports.
+  """
+  def port_close(port) do
+    if is_pid(port) do
+      # This is our proxy port
+      GenServer.call(Recorder, {:port_close, port}, :infinity)
+      true
+    else
+      # Real port, pass through
+      Port.close(port)
+    end
+  end
+
+  @doc """
   Get the configured cassette directory.
   """
   def cassette_dir do
-    Application.get_env(:cli_vcr, :cassette_dir, "test/fixtures/cassettes")
+    Application.get_env(:ex_cli_vcr, :cassette_dir, "test/fixtures/cassettes")
   end
 
   @doc """
   Get the default record mode.
   """
   def default_record_mode do
-    Application.get_env(:cli_vcr, :record_mode, :once)
+    Application.get_env(:ex_cli_vcr, :record_mode, :once)
   end
 end

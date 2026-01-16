@@ -25,7 +25,7 @@ defmodule ExCliVcrTest do
       assert File.exists?(cassette_path)
 
       {:ok, content} = File.read(cassette_path)
-      [recording] = Jason.decode!(content)
+      %{"commands" => [recording], "ports" => []} = Jason.decode!(content)
 
       assert recording["command"] == "echo"
       assert recording["args"] == ["hello"]
@@ -44,10 +44,10 @@ defmodule ExCliVcrTest do
       # Modify the cassette to verify we're replaying, not re-running
       cassette_path = Path.join(@cassette_dir, "replay_test.json")
       {:ok, content} = File.read(cassette_path)
-      [recording] = Jason.decode!(content)
+      %{"commands" => [recording], "ports" => []} = Jason.decode!(content)
 
       modified_recording = Map.put(recording, "output", "modified output\n")
-      File.write!(cassette_path, Jason.encode!([modified_recording]))
+      File.write!(cassette_path, Jason.encode!(%{"commands" => [modified_recording], "ports" => []}))
 
       # Now replay - should get the modified output
       use_cmd_cassette "replay_test" do
@@ -67,7 +67,7 @@ defmodule ExCliVcrTest do
 
       cassette_path = Path.join(@cassette_dir, "multiple_commands.json")
       {:ok, content} = File.read(cassette_path)
-      recordings = Jason.decode!(content)
+      %{"commands" => recordings, "ports" => []} = Jason.decode!(content)
 
       assert length(recordings) == 2
     end
@@ -87,7 +87,7 @@ defmodule ExCliVcrTest do
 
       cassette_path = Path.join(@cassette_dir, "force_record.json")
       {:ok, content} = File.read(cassette_path)
-      [recording] = Jason.decode!(content)
+      %{"commands" => [recording], "ports" => []} = Jason.decode!(content)
 
       assert recording["args"] == ["updated"]
     end
@@ -97,6 +97,55 @@ defmodule ExCliVcrTest do
         use_cmd_cassette "nonexistent", record: :none do
           System.cmd("echo", ["test"])
         end
+      end
+    end
+
+    test "record: :none raises when command is not in cassette" do
+      # First, create a cassette with one command
+      use_cmd_cassette "partial_cassette" do
+        System.cmd("echo", ["recorded"])
+      end
+
+      # Now try to replay with a different command - should fail
+      assert_raise ExCliVcr.CassetteNotFoundError, ~r/No recording found/, fn ->
+        use_cmd_cassette "partial_cassette", record: :none do
+          System.cmd("echo", ["not_recorded"])
+        end
+      end
+    end
+
+    test "record: :none raises when additional commands are called beyond recorded" do
+      # Create a cassette with one command
+      use_cmd_cassette "single_command" do
+        System.cmd("echo", ["first"])
+      end
+
+      # Try to call more commands than recorded - second command should fail
+      assert_raise ExCliVcr.CassetteNotFoundError, ~r/No recording found/, fn ->
+        use_cmd_cassette "single_command", record: :none do
+          # First call succeeds (matches recording)
+          {output, 0} = System.cmd("echo", ["first"])
+          assert output == "first\n"
+
+          # Second call with different args should fail
+          System.cmd("echo", ["second"])
+        end
+      end
+    end
+
+    test "record: :none allows replaying same command multiple times" do
+      # Create a cassette with one command
+      use_cmd_cassette "repeatable" do
+        System.cmd("echo", ["repeatable"])
+      end
+
+      # Same command can be called multiple times (matches the recording)
+      use_cmd_cassette "repeatable", record: :none do
+        {output1, 0} = System.cmd("echo", ["repeatable"])
+        {output2, 0} = System.cmd("echo", ["repeatable"])
+
+        assert output1 == "repeatable\n"
+        assert output2 == "repeatable\n"
       end
     end
   end
@@ -136,7 +185,7 @@ defmodule ExCliVcrTest do
       # Verify it's recorded correctly
       cassette_path = Path.join(@cassette_dir, "exit_code.json")
       {:ok, content} = File.read(cassette_path)
-      [recording] = Jason.decode!(content)
+      %{"commands" => [recording], "ports" => []} = Jason.decode!(content)
 
       assert recording["exit_code"] == 42
     end
