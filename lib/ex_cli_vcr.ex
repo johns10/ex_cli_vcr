@@ -44,12 +44,16 @@ defmodule ExCliVcr do
   Configure ExCliVcr in your `config/test.exs`:
 
       config :ex_cli_vcr,
-        cassette_dir: "test/fixtures/cassettes",
-        record_mode: :once
+        cassette_dir: "test/fixtures/cassettes"
+
+  ## Default Behavior
+
+  By default, the first time a cassette is used, commands are recorded. On
+  subsequent runs, recorded responses are replayed and any unrecognized
+  command will raise an error.
 
   ## Record Modes
 
-  - `:once` - Record if cassette doesn't exist, replay if it does (default)
   - `:new` - Always record, overwriting existing cassettes
   - `:none` - Never record, only replay (raises if cassette missing)
   - `:all` - Record all calls even if cassette exists
@@ -102,13 +106,15 @@ defmodule ExCliVcr do
     match_on = Keyword.get(opts, :match_requests_on, [:command, :args])
 
     cassette_path = Cassette.path_for(name)
+    cassette_existed = File.exists?(cassette_path)
     existing_recordings = Cassette.load(cassette_path)
 
     Recorder.start(
       cassette_path: cassette_path,
       record_mode: record_mode,
       match_on: match_on,
-      recordings: existing_recordings
+      recordings: existing_recordings,
+      cassette_existed: cassette_existed
     )
   end
 
@@ -222,6 +228,6 @@ defmodule ExCliVcr do
   Get the default record mode.
   """
   def default_record_mode do
-    Application.get_env(:ex_cli_vcr, :record_mode, :once)
+    Application.get_env(:ex_cli_vcr, :record_mode, nil)
   end
 end

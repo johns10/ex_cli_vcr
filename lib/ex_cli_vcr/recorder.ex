@@ -22,7 +22,9 @@ defmodule ExCliVcr.Recorder do
     new_port_recordings: [],
     # Map of proxy pid -> recording info for active ports
     active_ports: %{},
-    active: false
+    active: false,
+    # Whether the cassette file existed when we started
+    cassette_existed: false
   ]
 
   # Client API
@@ -88,7 +90,8 @@ defmodule ExCliVcr.Recorder do
       port_recordings: port_recordings,
       new_port_recordings: [],
       active_ports: %{},
-      active: true
+      active: true,
+      cassette_existed: Keyword.get(opts, :cassette_existed, false)
     }
 
     # Install mocks for System.cmd and Port
@@ -104,12 +107,14 @@ defmodule ExCliVcr.Recorder do
       state.active_ports
       |> Enum.reduce(state.new_port_recordings, fn {proxy_pid, port_info}, acc ->
         messages = PortProxy.get_messages(proxy_pid)
+
         recording = %{
           open_args: port_info.open_args,
           opts: port_info.opts,
           messages: messages,
           recorded_at: DateTime.utc_now() |> DateTime.to_iso8601()
         }
+
         [recording | acc]
       end)
 
@@ -125,6 +130,7 @@ defmodule ExCliVcr.Recorder do
         commands: state.command_recordings ++ Enum.reverse(state.new_command_recordings),
         ports: state.port_recordings ++ Enum.reverse(final_port_recordings)
       }
+
       Cassette.save(state.cassette_path, all_recordings)
     end
 
@@ -192,9 +198,10 @@ defmodule ExCliVcr.Recorder do
         recorded_at: DateTime.utc_now() |> DateTime.to_iso8601()
       }
 
-      new_state = %{state |
-        active_ports: Map.delete(state.active_ports, port),
-        new_port_recordings: [recording | state.new_port_recordings]
+      new_state = %{
+        state
+        | active_ports: Map.delete(state.active_ports, port),
+          new_port_recordings: [recording | state.new_port_recordings]
       }
 
       {:reply, :ok, new_state}
@@ -215,29 +222,28 @@ defmodule ExCliVcr.Recorder do
       :none ->
         replay_cmd_or_error(command, args, opts, state)
 
-      :once ->
-        case find_cmd_recording(command, args, opts, state) do
-          nil ->
-            record_and_execute_cmd(command, args, opts, state)
-
-          recording ->
-            {:ok, {recording.output, recording.exit_code}, state}
-        end
-
       :new ->
         record_and_execute_cmd(command, args, opts, state)
 
       :all ->
         record_and_execute_cmd(command, args, opts, state)
+
+      _ ->
+        if state.cassette_existed do
+          replay_cmd_or_error(command, args, opts, state)
+        else
+          record_and_execute_cmd(command, args, opts, state)
+        end
     end
   end
 
   defp replay_cmd_or_error(command, args, opts, state) do
     case find_cmd_recording(command, args, opts, state) do
       nil ->
-        {:error, %ExCliVcr.CassetteNotFoundError{
-          message: "No recording found for: #{command} #{Enum.join(args, " ")}"
-        }}
+        {:error,
+         %ExCliVcr.CassetteNotFoundError{
+           message: "No recording found for: #{command} #{Enum.join(args, " ")}"
+         }}
 
       recording ->
         {:ok, {recording.output, recording.exit_code}, state}
@@ -287,29 +293,28 @@ defmodule ExCliVcr.Recorder do
       :none ->
         replay_port_or_error(open_args, opts, owner_pid, state)
 
-      :once ->
-        case find_port_recording(open_args, opts, state) do
-          nil ->
-            record_port_open(open_args, opts, owner_pid, state)
-
-          recording ->
-            replay_port(recording, owner_pid, state)
-        end
-
       :new ->
         record_port_open(open_args, opts, owner_pid, state)
 
       :all ->
         record_port_open(open_args, opts, owner_pid, state)
+
+      _ ->
+        if state.cassette_existed do
+          replay_port_or_error(open_args, opts, owner_pid, state)
+        else
+          record_port_open(open_args, opts, owner_pid, state)
+        end
     end
   end
 
   defp replay_port_or_error(open_args, opts, owner_pid, state) do
     case find_port_recording(open_args, opts, state) do
       nil ->
-        {:error, %ExCliVcr.CassetteNotFoundError{
-          message: "No port recording found for: #{inspect(open_args)}"
-        }}
+        {:error,
+         %ExCliVcr.CassetteNotFoundError{
+           message: "No port recording found for: #{inspect(open_args)}"
+         }}
 
       recording ->
         replay_port(recording, owner_pid, state)

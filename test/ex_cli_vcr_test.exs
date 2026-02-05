@@ -133,6 +133,21 @@ defmodule ExCliVcrTest do
       end
     end
 
+    test "raises when called with different args on replay" do
+      # First run: record a command
+      use_cmd_cassette "different_args" do
+        {output, 0} = System.cmd("echo", ["original"])
+        assert output == "original\n"
+      end
+
+      # Second run: same cassette but different args should fail
+      assert_raise ExCliVcr.CassetteNotFoundError, ~r/No recording found/, fn ->
+        use_cmd_cassette "different_args" do
+          System.cmd("echo", ["different"])
+        end
+      end
+    end
+
     test "record: :none allows replaying same command multiple times" do
       # Create a cassette with one command
       use_cmd_cassette "repeatable" do
