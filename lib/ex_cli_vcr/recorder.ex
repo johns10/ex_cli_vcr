@@ -24,7 +24,9 @@ defmodule ExCliVcr.Recorder do
     active_ports: %{},
     active: false,
     # Whether the cassette file existed when we started
-    cassette_existed: false
+    cassette_existed: false,
+    # Paths to ignore, e.g. [[:opts, :cd]] — masked with "*" in recordings
+    ignore: []
   ]
 
   # Client API
@@ -91,7 +93,8 @@ defmodule ExCliVcr.Recorder do
       new_port_recordings: [],
       active_ports: %{},
       active: true,
-      cassette_existed: Keyword.get(opts, :cassette_existed, false)
+      cassette_existed: Keyword.get(opts, :cassette_existed, false),
+      ignore: Keyword.get(opts, :ignore, [])
     }
 
     # Install mocks for System.cmd and Port
@@ -253,10 +256,12 @@ defmodule ExCliVcr.Recorder do
   defp record_and_execute_cmd(command, args, opts, state) do
     {output, exit_code} = real_cmd(command, args, opts)
 
+    masked_opts = mask_ignored_opts(opts, state.ignore)
+
     recording = %{
       command: command,
       args: args,
-      opts: opts,
+      opts: masked_opts,
       output: output,
       exit_code: exit_code,
       recorded_at: DateTime.utc_now() |> DateTime.to_iso8601()
@@ -279,10 +284,23 @@ defmodule ExCliVcr.Recorder do
       case field do
         :command -> recording.command == command
         :args -> recording.args == args
-        :cd -> Keyword.get(recording.opts || [], :cd) == Keyword.get(opts, :cd)
-        :env -> Keyword.get(recording.opts || [], :env) == Keyword.get(opts, :env)
+        :cd ->
+          recorded = Keyword.get(recording.opts || [], :cd)
+          recorded == "*" || recorded == Keyword.get(opts, :cd)
+        :env ->
+          recorded = Keyword.get(recording.opts || [], :env)
+          recorded == "*" || recorded == Keyword.get(opts, :env)
         _ -> true
       end
+    end)
+  end
+
+  defp mask_ignored_opts(opts, ignore_paths) do
+    Enum.reduce(ignore_paths, opts, fn
+      [:opts, key], acc ->
+        if Keyword.has_key?(acc, key), do: Keyword.put(acc, key, "*"), else: acc
+      _, acc ->
+        acc
     end)
   end
 

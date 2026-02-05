@@ -190,6 +190,35 @@ defmodule ExCliVcrTest do
     end
   end
 
+  describe "ignore option" do
+    test "masks ignored opts with * in the recording" do
+      use_cmd_cassette "ignore_cd", ignore: [[:opts, :cd]] do
+        {output, 0} = System.cmd("pwd", [], cd: "/tmp")
+        assert String.contains?(output, "tmp")
+      end
+
+      cassette_path = Path.join(@cassette_dir, "ignore_cd.json")
+      {:ok, content} = File.read(cassette_path)
+      %{"commands" => [recording]} = Jason.decode!(content)
+
+      assert recording["opts"]["cd"] == "*"
+    end
+
+    test "replays with ignored opts regardless of actual value" do
+      # Record with one cd value
+      use_cmd_cassette "ignore_cd_replay", ignore: [[:opts, :cd]] do
+        System.cmd("pwd", [], cd: "/tmp")
+      end
+
+      # Replay with a different cd value — should still match
+      use_cmd_cassette "ignore_cd_replay", ignore: [[:opts, :cd]], match_requests_on: [:command, :args, :cd] do
+        {output, 0} = System.cmd("pwd", [], cd: "/var")
+        # Output comes from the recording, not a real execution
+        assert String.contains?(output, "tmp")
+      end
+    end
+  end
+
   describe "exit codes" do
     test "records non-zero exit codes" do
       use_cmd_cassette "exit_code" do

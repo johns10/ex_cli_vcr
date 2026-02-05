@@ -104,6 +104,7 @@ defmodule ExCliVcr do
   def start_cassette(name, opts \\ []) do
     record_mode = Keyword.get(opts, :record, default_record_mode())
     match_on = Keyword.get(opts, :match_requests_on, [:command, :args])
+    ignore = Keyword.get(opts, :ignore, [])
 
     cassette_path = Cassette.path_for(name)
     cassette_existed = File.exists?(cassette_path)
@@ -114,7 +115,8 @@ defmodule ExCliVcr do
       record_mode: record_mode,
       match_on: match_on,
       recordings: existing_recordings,
-      cassette_existed: cassette_existed
+      cassette_existed: cassette_existed,
+      ignore: ignore
     )
   end
 
