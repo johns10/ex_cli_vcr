@@ -54,14 +54,11 @@ The first time this runs, it executes the real command and saves the output to `
 
 ### Record Modes
 
-Control how cassettes are recorded with the `:record` option:
+By default, the first time a cassette is used, commands are recorded. On subsequent runs, recorded responses are replayed and any unrecognized command will raise an error.
+
+Override this with the `:record` option:
 
 ```elixir
-# :once (default) - Record if cassette doesn't exist, replay if it does
-use_cmd_cassette "my_test" do
-  System.cmd("echo", ["test"])
-end
-
 # :new - Always record, overwriting existing cassettes
 use_cmd_cassette "my_test", record: :new do
   System.cmd("echo", ["test"])
@@ -111,6 +108,17 @@ use_cmd_cassette "my_test", match_requests_on: [:command, :args, :cd] do
 end
 ```
 
+### Ignoring Options
+
+Use the `:ignore` option to mask sensitive or variable values in recordings. Ignored fields are stored as `"*"` in the cassette and skipped during matching:
+
+```elixir
+# The cd path will be stored as "*" and won't be matched on replay
+use_cmd_cassette "my_test", ignore: [[:opts, :cd]] do
+  System.cmd("mix", ["credo"], cd: "../some/project", stderr_to_stdout: true)
+end
+```
+
 ### Port Recording
 
 ExCliVcr also supports recording and replaying Port operations. Unlike `System.cmd`, Port operations **require explicit wrapper functions** because `Port.open/2` compiles to a BIF that cannot be intercepted at runtime.
@@ -146,8 +154,7 @@ Configure ExCliVcr in your `config/test.exs`:
 
 ```elixir
 config :ex_cli_vcr,
-  cassette_dir: "test/fixtures/cassettes",  # Where to store cassette files
-  record_mode: :once                         # Default record mode
+  cassette_dir: "test/fixtures/cassettes"  # Where to store cassette files
 ```
 
 ## Cassette Format
