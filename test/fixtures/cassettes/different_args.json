@@ -2,13 +2,13 @@
   "commands": [
     {
       "args": [
-        "recorded"
+        "original"
       ],
       "command": "echo",
       "exit_code": 0,
       "opts": {},
-      "output": "recorded\n",
-      "recorded_at": "2026-02-05T23:40:06.887461Z"
+      "output": "original\n",
+      "recorded_at": "2026-06-11T11:51:12.576765Z"
     }
   ],
   "ports": []

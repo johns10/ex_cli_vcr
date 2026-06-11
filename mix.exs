@@ -30,7 +30,7 @@ defmodule ExCliVcr.MixProject do
   defp deps do
     [
       {:jason, "~> 1.4"},
-      {:meck, "~> 0.9"},
+      {:meck, "~> 1.2.0"},
       {:ex_doc, "~> 0.31", only: :dev, runtime: false}
     ]
   end
