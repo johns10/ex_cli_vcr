@@ -283,7 +283,7 @@ defmodule ExCliVcr.Recorder do
     Enum.all?(match_on, fn field ->
       case field do
         :command -> recording.command == command
-        :args -> recording.args == args
+        :args -> args_match?(recording.args, args)
         :cd ->
           recorded = Keyword.get(recording.opts || [], :cd)
           recorded == "*" || recorded == Keyword.get(opts, :cd)
@@ -294,6 +294,41 @@ defmodule ExCliVcr.Recorder do
       end
     end)
   end
+
+  # `cd` and `env` have honoured a recorded "*" since the ignore option
+  # landed; `args` never did, and it was the one that mattered. A path that
+  # travels as an argument — `mix spex --jsonl=/abs/path` — was compared by
+  # exact equality, which pins the cassette to the checkout that recorded it.
+  # The same suite then passes on one machine and fails on every other, with
+  # "No recording found" pointing at the command rather than at the path
+  # inside it.
+  #
+  # A recorded arg is a glob when it contains "*", so `--jsonl=*` still
+  # requires the flag and only forgives the path. Masking the whole argument
+  # would match any `mix spex` invocation, which is looser than anyone wants.
+  defp args_match?(recorded, actual)
+       when is_list(recorded) and is_list(actual) and length(recorded) == length(actual) do
+    recorded
+    |> Enum.zip(actual)
+    |> Enum.all?(fn {r, a} -> arg_matches?(r, a) end)
+  end
+
+  defp args_match?(recorded, actual), do: recorded == actual
+
+  defp arg_matches?(recorded, actual) when is_binary(recorded) and is_binary(actual) do
+    if String.contains?(recorded, "*") do
+      pattern =
+        recorded
+        |> String.split("*")
+        |> Enum.map_join(".*", &Regex.escape/1)
+
+      Regex.match?(Regex.compile!("\\A" <> pattern <> "\\z", "s"), actual)
+    else
+      recorded == actual
+    end
+  end
+
+  defp arg_matches?(recorded, actual), do: recorded == actual
 
   defp mask_ignored_opts(opts, ignore_paths) do
     Enum.reduce(ignore_paths, opts, fn

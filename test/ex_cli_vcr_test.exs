@@ -219,6 +219,64 @@ defmodule ExCliVcrTest do
     end
   end
 
+  describe "wildcards in recorded args" do
+    # A path that travels as an ARGUMENT rather than in opts used to be
+    # compared by exact equality, which pins a cassette to the checkout that
+    # recorded it — the suite then passes on one machine and fails on every
+    # other, with "No recording found" naming the command rather than the
+    # path buried inside it.
+    defp rewrite_args(name, args) do
+      path = Path.join(@cassette_dir, "#{name}.json")
+      %{"commands" => [recording]} = Jason.decode!(File.read!(path))
+
+      File.write!(
+        path,
+        Jason.encode!(%{"commands" => [Map.put(recording, "args", args)], "ports" => []})
+      )
+    end
+
+    test "a recorded arg containing * matches any value in its place" do
+      use_cmd_cassette "wildcard_args" do
+        System.cmd("echo", ["--out=/tmp/original-path"])
+      end
+
+      rewrite_args("wildcard_args", ["--out=*"])
+
+      use_cmd_cassette "wildcard_args", record: :none do
+        {output, 0} = System.cmd("echo", ["--out=/somewhere/entirely/different"])
+        assert String.contains?(output, "original-path")
+      end
+    end
+
+    test "the non-wildcard part of the arg still has to match" do
+      use_cmd_cassette "wildcard_args_strict" do
+        System.cmd("echo", ["--out=/tmp/x"])
+      end
+
+      rewrite_args("wildcard_args_strict", ["--out=*"])
+
+      assert_raise ExCliVcr.CassetteNotFoundError, fn ->
+        use_cmd_cassette "wildcard_args_strict", record: :none do
+          System.cmd("echo", ["--quiet"])
+        end
+      end
+    end
+
+    test "args of different lengths never match" do
+      use_cmd_cassette "wildcard_args_arity" do
+        System.cmd("echo", ["--out=/tmp/x"])
+      end
+
+      rewrite_args("wildcard_args_arity", ["--out=*"])
+
+      assert_raise ExCliVcr.CassetteNotFoundError, fn ->
+        use_cmd_cassette "wildcard_args_arity", record: :none do
+          System.cmd("echo", ["--out=/tmp/x", "--extra"])
+        end
+      end
+    end
+  end
+
   describe "exit codes" do
     test "records non-zero exit codes" do
       use_cmd_cassette "exit_code" do
