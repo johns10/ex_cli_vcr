@@ -148,6 +148,44 @@ defmodule ExCliVcrTest do
       end
     end
 
+    # A sequence that repeats a command whose answer changes is ordinary, not
+    # exotic: `git rev-parse HEAD` fails before the first commit and succeeds
+    # after it. Replaying the first match every time told a caller that had
+    # just committed there was no HEAD — and the failure reads as the command
+    # being wrong rather than the cassette being consumed wrongly.
+    # A sequence that repeats *the same* command whose answer changes is
+    # ordinary, not exotic: `git rev-parse HEAD` fails before the first commit
+    # and succeeds after it. Replaying the first match every time told a caller
+    # that had just committed there was no HEAD — and the failure reads as the
+    # command being wrong rather than the cassette being consumed wrongly.
+    #
+    # The counter matters: identical command *and* args, different output. A
+    # test whose two calls differ in their args passes without the feature.
+    test "sequential: true replays repeated commands in the order recorded" do
+      File.rm_rf("test/fixtures/cassettes/sequential_replay.json")
+      counter = Path.join(System.tmp_dir!(), "excv-counter-#{System.unique_integer([:positive])}")
+      script = "n=$(cat #{counter} 2>/dev/null || echo 0); echo $n; expr $n + 1 > #{counter}"
+
+      use_cmd_cassette "sequential_replay", sequential: true do
+        {"0\n", 0} = System.cmd("sh", ["-c", script])
+        {"1\n", 0} = System.cmd("sh", ["-c", script])
+      end
+
+      File.rm_rf(counter)
+
+      use_cmd_cassette "sequential_replay", record: :none, sequential: true do
+        {first, 0} = System.cmd("sh", ["-c", script])
+        {second, 0} = System.cmd("sh", ["-c", script])
+
+        assert first == "0\n"
+
+        assert second == "1\n",
+               "the second call replayed the first recording — sequential replay is not consuming"
+      end
+
+      File.rm_rf("test/fixtures/cassettes/sequential_replay.json")
+    end
+
     test "record: :none allows replaying same command multiple times" do
       # Create a cassette with one command
       use_cmd_cassette "repeatable" do

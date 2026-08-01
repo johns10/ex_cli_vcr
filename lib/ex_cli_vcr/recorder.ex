@@ -14,6 +14,7 @@ defmodule ExCliVcr.Recorder do
     :cassette_path,
     :record_mode,
     :match_on,
+    :sequential,
     # Commands
     command_recordings: [],
     new_command_recordings: [],
@@ -87,6 +88,7 @@ defmodule ExCliVcr.Recorder do
       cassette_path: Keyword.fetch!(opts, :cassette_path),
       record_mode: record_mode,
       match_on: Keyword.get(opts, :match_on, [:command, :args]),
+      sequential: Keyword.get(opts, :sequential, false),
       command_recordings: command_recordings,
       new_command_recordings: [],
       port_recordings: port_recordings,
@@ -249,7 +251,35 @@ defmodule ExCliVcr.Recorder do
          }}
 
       recording ->
+        state = if state.sequential, do: consume(state, recording), else: state
         {:ok, {recording.output, recording.exit_code}, state}
+    end
+  end
+
+  # Under `sequential: true` a replayed recording is spent, so the next
+  # identical command gets the next recording rather than the same one
+  # forever.
+  #
+  # Sequences repeat commands whose answers differ, and that is normal rather
+  # than exotic: `git rev-parse HEAD` fails before the first commit and
+  # succeeds after it, so replaying the first match every time reported "no
+  # HEAD" to a caller that had just made one. The failure surfaces as the
+  # command being wrong rather than as the cassette being consumed wrongly.
+  #
+  # Off by default: replaying one recording for many identical calls is the
+  # right behaviour when a command is idempotent, and turning that off
+  # everywhere would break cassettes that rely on it.
+  #
+  # Recordings that were never matched are left alone, so a cassette may still
+  # carry commands a given run does not reach.
+  defp consume(state, recording) do
+    case Enum.split_while(state.command_recordings, &(&1 != recording)) do
+      {_before, []} ->
+        remaining = Enum.reject(state.new_command_recordings, &(&1 == recording))
+        %{state | new_command_recordings: remaining}
+
+      {before, [_spent | rest]} ->
+        %{state | command_recordings: before ++ rest}
     end
   end
 

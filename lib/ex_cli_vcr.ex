@@ -114,6 +114,7 @@ defmodule ExCliVcr do
       cassette_path: cassette_path,
       record_mode: record_mode,
       match_on: match_on,
+      sequential: Keyword.get(opts, :sequential, false),
       recordings: existing_recordings,
       cassette_existed: cassette_existed,
       ignore: ignore
