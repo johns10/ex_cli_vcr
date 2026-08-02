@@ -312,7 +312,7 @@ defmodule ExCliVcr.Recorder do
   defp cmd_matches?(recording, command, args, opts, match_on) do
     Enum.all?(match_on, fn field ->
       case field do
-        :command -> recording.command == command
+        :command -> arg_matches?(recording.command, command)
         :args -> args_match?(recording.args, args)
         :cd ->
           recorded = Keyword.get(recording.opts || [], :cd)
@@ -329,6 +329,12 @@ defmodule ExCliVcr.Recorder do
   # landed; `args` never did, and it was the one that mattered. A path that
   # travels as an argument — `mix spex --jsonl=/abs/path` — was compared by
   # exact equality, which pins the cassette to the checkout that recorded it.
+  #
+  # The same is true of a path that travels as the *command*. A caller that
+  # runs a script out of a working directory — `/tmp/build-31555/bin/deploy` —
+  # records an absolute path that is different on the next run, so the
+  # recording can never match itself. `:command` is matched with the same glob
+  # as `:args` for that reason: identical problem, identical answer.
   # The same suite then passes on one machine and fails on every other, with
   # "No recording found" pointing at the command rather than at the path
   # inside it.

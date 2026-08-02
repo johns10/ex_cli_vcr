@@ -257,6 +257,48 @@ defmodule ExCliVcrTest do
     end
   end
 
+  describe "wildcards in the recorded command" do
+    # The same problem as an argument path, one field over: a caller that runs
+    # a script out of a working directory records an absolute path that is
+    # different on the next run, so the recording can never match itself.
+    defp rewrite_command(name, command) do
+      path = Path.join(@cassette_dir, "#{name}.json")
+      %{"commands" => [recording]} = Jason.decode!(File.read!(path))
+
+      File.write!(
+        path,
+        Jason.encode!(%{"commands" => [Map.put(recording, "command", command)], "ports" => []})
+      )
+    end
+
+    test "a recorded command containing * matches any path in its place" do
+      use_cmd_cassette "wildcard_command" do
+        System.cmd("echo", ["hello"])
+      end
+
+      rewrite_command("wildcard_command", "*/echo")
+
+      use_cmd_cassette "wildcard_command", record: :none do
+        {output, 0} = System.cmd("/bin/echo", ["hello"])
+        assert String.contains?(output, "hello")
+      end
+    end
+
+    test "the non-wildcard part of the command still has to match" do
+      use_cmd_cassette "wildcard_command_strict" do
+        System.cmd("echo", ["hello"])
+      end
+
+      rewrite_command("wildcard_command_strict", "*/echo")
+
+      assert_raise ExCliVcr.CassetteNotFoundError, fn ->
+        use_cmd_cassette "wildcard_command_strict", record: :none do
+          System.cmd("/bin/cat", ["hello"])
+        end
+      end
+    end
+  end
+
   describe "wildcards in recorded args" do
     # A path that travels as an ARGUMENT rather than in opts used to be
     # compared by exact equality, which pins a cassette to the checkout that
