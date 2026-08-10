@@ -47,7 +47,13 @@ defmodule ExCliVcr.Recorder do
   Stop recording and save the cassette.
   """
   def stop do
-    GenServer.call(__MODULE__, :stop)
+    # No timeout, because stopping writes the cassette — work proportional to
+    # how much was recorded, not a quick handshake. A run that recorded a few
+    # hundred commands with their output blew the default five seconds and
+    # crashed the test that was trying to save it, losing the recording it
+    # had just spent ten minutes making. Every other call here is already
+    # :infinity for the same reason.
+    GenServer.call(__MODULE__, :stop, :infinity)
   end
 
   @doc """
